@@ -1148,7 +1148,10 @@ impl PageEndpoint {
                 .node_root()
                 .await?
                 .join("server")?,
-            project.server_chunking_context(true),
+            project.server_chunking_context(
+                true, // client_assets
+                true, // supports_lazy_dynamic_imports
+            ),
             project.edge_chunking_context(true),
         ))
     }
@@ -1164,7 +1167,10 @@ impl PageEndpoint {
                 .node_root()
                 .await?
                 .join("server/data")?,
-            this.pages_project.project().server_chunking_context(true),
+            this.pages_project.project().server_chunking_context(
+                true, // client_assets
+                true, // supports_lazy_dynamic_imports
+            ),
             this.pages_project.project().edge_chunking_context(true),
         ))
     }
@@ -1180,7 +1186,10 @@ impl PageEndpoint {
                 .node_root()
                 .await?
                 .join("server")?,
-            this.pages_project.project().server_chunking_context(false),
+            this.pages_project.project().server_chunking_context(
+                false, // client_assets
+                true,  // supports_lazy_dynamic_imports
+            ),
             this.pages_project.project().edge_chunking_context(false),
         ))
     }
