@@ -49,7 +49,7 @@ jobs:
 
       - name: Setup corepack
         run: |
-          npm i -g corepack@0.31
+          npm i -g corepack@0.34.7
           corepack enable
 
       - name: Install dependencies
@@ -112,7 +112,7 @@ jobs:
 
       - name: Setup corepack
         run: |
-          npm i -g corepack@0.31
+          npm i -g corepack@0.34.7
           corepack enable
 
       - name: Install dependencies
