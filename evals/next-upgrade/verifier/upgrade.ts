@@ -104,8 +104,13 @@ export function upgradeChecks(target: string): void {
     )
     expect(effective.compilerOptions.noCheck === true).toBe(false)
     expect(effective.compilerOptions.strict).toBe(true)
+    // showConfig lists roots only; imported app/lib files still belong to the
+    // checked program and must count toward source coverage.
     const included = new Set(
-      effective.files.map((file: string) => resolve(app, file))
+      run('node', ['node_modules/typescript/bin/tsc', '--listFilesOnly'], 90000)
+        .trim()
+        .split(/\r?\n/)
+        .map((file) => resolve(app, file))
     )
     const covered = (directory: string) => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {

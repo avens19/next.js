@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { completedJudge } from './judge/EVAL'
 import { expect, test } from 'vitest'
-import { transcript, parseJudgeVerdict } from '@vercel/agent-eval/eval'
+import { transcript } from '@vercel/agent-eval/eval'
 
 // Require runtime output for the selected policy and build identity. Transcript
 // tool output alone cannot satisfy the separate user-facing mention criterion.
@@ -57,11 +57,7 @@ async function judgeMention(
   const verdictPath = resultPath.replace('-result.json', '-verdict.json')
   const verdict = completedJudge(
     runner,
-    parseJudgeVerdict(
-      existsSync(verdictPath)
-        ? readFileSync(verdictPath, 'utf8')
-        : runner.output
-    )
+    existsSync(verdictPath) ? readFileSync(verdictPath, 'utf8') : runner.output
   )
   if (verdict.pass && assertionError) {
     throw assertionError
