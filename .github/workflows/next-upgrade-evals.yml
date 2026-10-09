@@ -98,13 +98,16 @@ jobs:
 
       # Cache only a small manifest of credential-free, one-day remote snapshots.
       # Daily keys avoid repeatedly restoring IDs after their remote TTL expires.
+      # Unique entries let replacements supersede stale IDs within the same day.
       - name: Restore Sandbox tooling snapshots
         id: snapshot-cache
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         timeout-minutes: 5
         with:
           path: evals/next-upgrade/.work/cache/snapshots.json
-          key: next-upgrade-snapshots-v1-${{ steps.snapshots.outputs.key }}
+          key: next-upgrade-snapshots-v2-${{ steps.snapshots.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            next-upgrade-snapshots-v2-${{ steps.snapshots.outputs.key }}-
 
       - name: Pull Vercel OIDC token
         env:
@@ -132,18 +135,19 @@ jobs:
           NODE
 
       - name: Run all upgrade evals in parallel
+        id: evals
         env:
           NEXT_UPGRADE_EVAL_SNAPSHOT_CACHE: evals/next-upgrade/.work/cache/snapshots.json
           TURBO_TOKEN: ''
         run: node evals/next-upgrade/batch.js
 
       - name: Save Sandbox tooling snapshots
-        if: ${{ always() && !cancelled() && steps.snapshot-cache.outputs.cache-hit != 'true' && hashFiles('evals/next-upgrade/.work/cache/snapshots.json') != '' }}
+        if: ${{ always() && !cancelled() && steps.evals.outputs.snapshots-created == 'true' && hashFiles('evals/next-upgrade/.work/cache/snapshots.json') != '' }}
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         timeout-minutes: 5
         with:
           path: evals/next-upgrade/.work/cache/snapshots.json
-          key: next-upgrade-snapshots-v1-${{ steps.snapshots.outputs.key }}
+          key: next-upgrade-snapshots-v2-${{ steps.snapshots.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Retain transcripts and grading evidence
         if: always()

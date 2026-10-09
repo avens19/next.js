@@ -111,6 +111,73 @@ describe('batch cache and cancellation boundaries', () => {
     ).toContain('preparing a replacement')
   })
 
+  it('cleans cancelled snapshots and reports replacements for cache persistence', () => {
+    // Execute the real batch with controlled snapshot and subprocess boundaries.
+    const program = `
+      const assert = require('node:assert/strict')
+      const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm')
+      const { EventEmitter } = require('node:events')
+      const { cleanupOwned } = require('./evals/next-upgrade/run.js')
+      const source = fs.readFileSync('./evals/next-upgrade/batch.js', 'utf8')
+      ;(async () => {
+        for (const mode of ['preparation', 'trials', 'restored', 'complete', 'replacement']) {
+          const deleted = [], written = [], outputs = []
+          const process = new EventEmitter()
+          const cache = '/controlled/snapshots.json'
+          process.argv = ['node', 'batch.js', 'security-same-major']
+          process.env = { NEXT_UPGRADE_EVAL_SNAPSHOT_CACHE: cache, GITHUB_OUTPUT: '/controlled/outputs' }
+          const module = { exports: {} }
+          const snapshot = name => ({ snapshotId: name, delete: async () => { deleted.push(name) } })
+          const prepare = async name => {
+            if (mode === 'preparation') process.emit('SIGTERM')
+            return snapshot(name)
+          }
+          const files = { ...fs, mkdirSync: () => {}, rmSync: () => {}, openSync: () => 1, closeSync: () => {},
+            readdirSync: () => ['security-same-major'],
+            existsSync: file => ['restored', 'replacement'].includes(mode) && file === cache,
+            writeFileSync: file => { written.push(file) },
+            appendFileSync: (_, text) => { outputs.push(text) },
+            readFileSync: file => file === cache ? JSON.stringify({ key: module.exports.snapshotKey(), toolchain: 'shared-toolchain', verifier: 'shared-verifier' }) : Buffer.from('trusted tooling') }
+          const load = name => {
+            if (name === 'node:fs') return files
+            if (name === 'tsx/cjs') return {}
+            if (name === 'dotenv') return { config: () => {} }
+            if (name === '../lib/pack') return { packPackage: () => {} }
+            if (name === './verifier/verify.ts') return { prepareVerifier: () => prepare('verifier') }
+            if (name === './run') return { prepareToolchain: () => prepare('toolchain'), cleanupOwned, hash: () => 'package', redact: value => value, preflight: () => {} }
+            if (name === '@vercel/sandbox') return { Snapshot: { get: async ({ snapshotId }) => ({ ...snapshot(snapshotId), status: 'created', expiresAt: new Date(Date.now() + (mode === 'replacement' ? -1000 : 7200000)) }) } }
+            if (name === 'node:child_process') return { execFileSync: () => 'controlled source', spawn: () => {
+              const child = new EventEmitter()
+              child.kill = () => { queueMicrotask(() => child.emit('close', 130)); return true }
+              queueMicrotask(() => { if (mode === 'trials' || mode === 'restored') process.emit('SIGTERM'); else child.emit('close', 0) })
+              return child
+            } }
+            return require(name)
+          }
+          vm.runInNewContext(source, { require: load, module, process, __dirname: path.resolve('evals/next-upgrade'), global, Buffer, console: { log: () => {} } })
+          if (mode === 'preparation') {
+            await assert.rejects(() => module.exports.main(), /cancelled during preparation/)
+            assert.equal(written.includes(cache), false)
+            assert.deepEqual(outputs, [])
+          } else {
+            await module.exports.main()
+            assert.equal(written.includes(cache), true)
+            assert.deepEqual(outputs, ['snapshots-created=' + (mode !== 'restored') + '\\n'])
+          }
+          assert.deepEqual(deleted.sort(), mode === 'preparation' || mode === 'trials' ? ['toolchain', 'verifier'] : [])
+          assert.equal(process.listenerCount('SIGTERM'), 0)
+        }
+      })().catch(error => { console.error(error); process.exitCode = 1 })
+    `
+    expect(
+      execFileSync(process.execPath, ['-e', program], {
+        cwd: join(__dirname, '../../..'),
+        encoding: 'utf8',
+        timeout: 10000,
+      })
+    ).toHaveLength(0)
+  })
+
   // Windows does not deliver POSIX process-group signals to child handlers.
   // @force-gate !windows
   it('waits for native capture after cancellation before returning', () => {

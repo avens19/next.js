@@ -116,6 +116,7 @@ async function main() {
   process.on('SIGTERM', cancel)
   const owned = []
   const trials = []
+  let cacheWritten = false
   try {
     // Prepare immutable packages once, then hand each case its own copy. Stable
     // identity is compiled in an isolated checkout, never relabelled afterwards.
@@ -193,15 +194,24 @@ async function main() {
         'Batch snapshot preparation failed'
       )
     }
+    if (cancelled) {
+      throw new Error('Batch cancelled during preparation')
+    }
     if (cacheFile) {
       fs.mkdirSync(path.dirname(cacheFile), { recursive: true })
       fs.writeFileSync(
         cacheFile,
         JSON.stringify({ key, ...snapshots }, null, 2)
       )
-      // The cache owns these snapshots until their one-day TTL. A trial must
-      // never delete a snapshot that another workflow can still be using.
-      owned.length = 0
+      cacheWritten = true
+      // Cache entries are immutable. Tell CI when replacement IDs need a new
+      // entry; fully restored snapshots can keep using the existing manifest.
+      if (process.env.GITHUB_OUTPUT) {
+        fs.appendFileSync(
+          process.env.GITHUB_OUTPUT,
+          `snapshots-created=${Object.values(restored).includes(false)}\n`
+        )
+      }
     }
     const preparationMs = Date.now() - started
     fs.writeFileSync(
@@ -212,9 +222,6 @@ async function main() {
         2
       )
     )
-    if (cancelled) {
-      throw new Error('Batch cancelled during preparation')
-    }
 
     // Six native processes each prepare one fixture for two independent agent
     // forks. A failed case does not cancel the remaining evidence collection.
@@ -347,6 +354,11 @@ async function main() {
     )
     throw error
   } finally {
+    // CI saves the snapshot cache only after uncancelled runs. Keep new snapshot
+    // ownership until then; restored snapshots were never ours to delete.
+    if (cacheWritten && !cancelled) {
+      owned.length = 0
+    }
     let retained = true
     try {
       await cleanupOwned([
