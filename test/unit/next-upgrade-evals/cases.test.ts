@@ -39,6 +39,23 @@ describe('candidate upgrade evidence', () => {
   })
 })
 
+describe('fixed judge execution boundary', () => {
+  const {
+    completedJudge,
+  } = require('../../../evals/next-upgrade/verifier/judge/EVAL')
+
+  it('accepts a completed semantic failure while rejecting runner and parser failures', () => {
+    const verdict = { pass: false, reason: 'Final response omitted the notice' }
+    expect(completedJudge({ ok: true, agentExitCode: 0 }, verdict)).toEqual(
+      verdict
+    )
+    expect(() =>
+      completedJudge({ ok: false, agentExitCode: 1 }, verdict)
+    ).toThrow()
+    expect(() => completedJudge({ ok: true, agentExitCode: 0 }, null)).toThrow()
+  })
+})
+
 describe('prepared candidate and cleanup ownership', () => {
   const {
     validatePreparedCandidate,
